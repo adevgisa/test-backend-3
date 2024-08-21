@@ -9,10 +9,6 @@ from courses.models import Course, Group
 
 from users.models import Subscription
 
-class TooManyStudentsInCourse(Exception):
-    pass
-
-
 @receiver(post_save, sender=Subscription)
 def post_save_subscription(sender, instance: Subscription, created, **kwargs):
     """
@@ -26,7 +22,6 @@ def post_save_subscription(sender, instance: Subscription, created, **kwargs):
                 subscribers_count=Count('users'),
             ).order_by('subscribers_count')
 
-        pdb.set_trace()
         if not groups.exists():
             course = Course.objects.get(id=instance.course_id)
             group = Group.objects.create(course=course)
@@ -37,4 +32,4 @@ def post_save_subscription(sender, instance: Subscription, created, **kwargs):
         elif groups[0].subscribers_count < Group.max_subscribers_per_group:
             groups[0].users.add(instance.user_id)
         else:
-            raise TooManyStudentsInCourse()
+            raise Group.TooManyStudentsInCourse()

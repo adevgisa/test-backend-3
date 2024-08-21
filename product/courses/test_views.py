@@ -10,11 +10,21 @@ from rest_framework.test import APITestCase, APIRequestFactory
 
 from users.models import Balance, Subscription
 
-from .models import Course, Group
+from .models import Course, Group, Lesson
 
 User = get_user_model()
 
 def create_courses():
+    for i in range(3):
+        course = Course.objects.create(author='Author' + str(i),title='title'
+            + str(i), start_date=timezone.now(), price=100)
+
+        for j in range(5):
+            lesson = Lesson.objects.create(title='lesson' + str(j),
+                link='videos.com/link' + str(j), course=course)
+    return Course.objects.count()
+
+    """
     Course.objects.bulk_create([
         Course(author='Author',title='title',start_date=timezone.now(),
             price=100),
@@ -25,6 +35,7 @@ def create_courses():
         Course(author='Author4',title='title4',start_date=timezone.now(),
             price=400),
     ])
+    """
 
 class CourseTests(APITestCase):
     @classmethod
@@ -156,7 +167,6 @@ class CourseTests(APITestCase):
         self.assertNotEqual(user.groups_of_courses.all()[0], None)
         self.assertNotEqual(user2.groups_of_courses.all()[0], None)
         self.assertNotEqual(user.groups_of_courses.all()[0], user2.groups_of_courses.all()[0])
-        pdb.set_trace()
 
     def test_fail_subscribe_on_non_existing_course(self):
         """
@@ -181,7 +191,6 @@ class CourseTests(APITestCase):
         create_courses()
 
         count = Course.objects.count()
-        self.assertEqual(count, 4)
 
         url = reverse('courses-pay', kwargs={'pk': count})
         
@@ -195,3 +204,21 @@ class CourseTests(APITestCase):
         response = self.client.post(url, data)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(Subscription.objects.count(), 1)
+
+    def test_list_available_courses_for_user(self):
+        """
+        Убедиться что пользователю показываются только те курсы, на которые
+        он не подписался
+        """
+        count = create_courses()
+
+        crs = Course.objects.get(id=count)
+        Subscription.objects.create(user=self.user, course=crs)
+
+        url = reverse('courses-list')
+        self.client.credentials(HTTP_AUTHORIZATION='Token ' + self.user.token)
+        response = self.client.get(url)
+
+        pdb.set_trace()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), count - 1)

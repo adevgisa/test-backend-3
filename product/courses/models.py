@@ -70,11 +70,14 @@ class Group(models.Model):
         blank = True
     )
 
-    max_groups_per_course = 10
-    max_subscribers_per_group = 30
-    max_subscribers_per_course = max_groups_per_course * max_subscribers_per_group
-
     class Meta:
         verbose_name = 'Группа'
         verbose_name_plural = 'Группы'
         ordering = ('-id',)
+
+    max_groups_per_course = 10
+    max_subscribers_per_group = 30
+    max_subscribers_per_course = max_groups_per_course * max_subscribers_per_group
+
+    class TooManyStudentsInCourse(Exception):
+        pass

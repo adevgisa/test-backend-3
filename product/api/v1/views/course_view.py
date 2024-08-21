@@ -74,22 +74,12 @@ class CourseViewSet(viewsets.ModelViewSet):
             return CourseSerializer
         return CreateCourseSerializer
 
-    def create(self, request, *args, **kwargs):
-        # TODO remove this method
-        user = request.user
-        data = {
-            "author": request.POST.get('author', None),
-            "title": request.POST.get('title', None),
-            "start_date": request.POST.get('start_date', None),
-            "price": request.POST.get('price', 0),
-        }
-        serializer = self.get_serializer_class()(data=data)
+    def list(self, request):
+        if request.user.is_authenticated and not request.user.is_staff:
+            qs = Subscription.objects.filter(user=request.user.id).values('course')
+            self.queryset = Course.objects.exclude(id__in=qs).prefetch_related('lessons')
 
-        if serializer.is_valid():
-            serializer.save()
-            return Response(data=serializer.data, status=status.HTTP_201_CREATED)
-        else:
-            return Response(data=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return super(CourseViewSet, self).list(request)
 
     @action(
         methods=['post'],
