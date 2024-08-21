@@ -11,6 +11,6 @@ class BalanceAdmin(admin.ModelAdmin):
         )
 
         if obj:
-            return readonly_fields + ['value']
+            return readonly_fields + ['bonus_count']
 
         return readonly_fields
