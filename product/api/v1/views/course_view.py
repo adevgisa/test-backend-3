@@ -1,4 +1,10 @@
+import pdb
+
+from django.contrib.auth import get_user_model
+from django.db.models import FilteredRelation, Q, Prefetch, F, Count, Max
+from django.http import Http404
 from django.shortcuts import get_object_or_404
+
 from rest_framework import status, viewsets, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -11,8 +17,12 @@ from api.v1.serializers.course_serializer import (CourseSerializer,
                                                   GroupSerializer,
                                                   LessonSerializer)
 from api.v1.serializers.user_serializer import SubscriptionSerializer
-from courses.models import Course
-from users.models import Subscription
+
+from courses.models import Course, Group
+
+from users.models import Balance, Subscription
+
+User = get_user_model()
 
 
 class LessonViewSet(viewsets.ModelViewSet):
@@ -64,6 +74,23 @@ class CourseViewSet(viewsets.ModelViewSet):
             return CourseSerializer
         return CreateCourseSerializer
 
+    def create(self, request, *args, **kwargs):
+        # TODO remove this method
+        user = request.user
+        data = {
+            "author": request.POST.get('author', None),
+            "title": request.POST.get('title', None),
+            "start_date": request.POST.get('start_date', None),
+            "price": request.POST.get('price', 0),
+        }
+        serializer = self.get_serializer_class()(data=data)
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(data=serializer.data, status=status.HTTP_201_CREATED)
+        else:
+            return Response(data=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     @action(
         methods=['post'],
         detail=True,
@@ -72,9 +99,61 @@ class CourseViewSet(viewsets.ModelViewSet):
     def pay(self, request, pk):
         """Покупка доступа к курсу (подписка на курс)."""
 
-        # TODO
+        queryset = Course.objects.filter(id=pk).annotate(
+            subscriptions_user=FilteredRelation(
+                'subscriptions', 
+                condition=Q(subscriptions__user=request.user)
+            ),
+            course_groups=FilteredRelation(
+                'groups',
+                condition=Q(groups__course=pk)
+            ),
+            subscribers_count = Count("groups__users")
+        ).values('id', 'price', 'subscriptions_user__user', 'subscribers_count')
+
+        if not queryset.exists():
+            raise Http404()
+
+        course = queryset[0]
+
+        if course['subscriptions_user__user'] is None:
+            if course['subscribers_count'] >= Group.max_subscribers_per_course:
+                return Response(
+                    data = {
+                        'error': 'Вы не можете подписаться на данный курс, т.к. все группы заполнены'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            balance = Balance.objects.get(user=request.user.id)
+            if balance.bonus_count < course['price']:
+                return Response(
+                    data = {
+                        'error': 'У вас недостаточно бонусов, чтобы подписаться на этот курс'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            data = {
+                'user': request.user.id,
+                'course': course['id'],
+            }
+            serializer = SubscriptionSerializer(data=data)
+            if serializer.is_valid():
+                balance.bonus_count -= course['price']
+                balance.save(update_fields=['bonus_count'])
+                serializer.save()
+                return Response(
+                    data=data,
+                    status=status.HTTP_201_CREATED
+                )
+
+            return Response(
+                data=serializer.errors,
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         return Response(
-            data=data,
-            status=status.HTTP_201_CREATED
+            data={'error': 'Вы уже подписаны на этот курс'},
+            status=status.HTTP_400_BAD_REQUEST
         )
